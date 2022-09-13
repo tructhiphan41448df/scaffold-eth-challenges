@@ -1,7 +1,213 @@
+
+0xF820fAA7C8A7fb2f9CD46C4A9E91Ec53d0f11b01
+Coinman.eth
+0xF820…f11b01
+
+Subscribe
+
+Collect
+Alchemy的the Road to Web3第六周文本教程- 构建 Staking Dapp
+0xF820
+August 16th, 2022
+大家好，我是帝哥（推特：@CoinmanLabs），今天帝哥带大家一起来看看第六周的任务。
+
+在开始我们今天的课程之前，帝哥再次给大家介绍一款在线编译工具，主要是前面的课程让大家使用本地的VScode，对于大家来说确实难度有点大，因为需要安装的事宜，第六周涉及到了Github，如果让大家安装不一定都可以安装成功，所以这里给大家介绍一款工具。
+
+Gitpod是一个基于Chorom Cloud平台的在线IDE，它可以快速的启动一个基于大多数流行语言的开发环境，并且可以很顺畅的进行开发。是一款在线IDE能即时修改github代码。
+
+如何使用Gitpod
+在chrome浏览器中输入： https://gitpod.io/#github.com/banq/jdonframework
+
+注意，github.com/banq/jdonframework代表你要参与修改的github项目。当键入以后，会提示你授权github账户给它，然后提示你安装chrome插件，这一切安装好的，一个IDE界面显示出来，里面的项目就是你要参与的项目源码，你可以更改代码，然后提交git，也可以进行pull request. 默认git push 是不上去的，它会提醒并跳到配置界面，我们需要，开放配置公开仓库的写权限。如下所示：
+
+
+
+上面帝哥就是简单的给大家介绍下这款工具的使用，毕竟工欲善其事必先利其器，下面我们就正式开始今天的课程。
+
+我们已经学会了如何从头开始使用 Hardhat，构建我们自己的前端，甚至编写 Solidity。
+
+虽然所有这些技能对于希望建立坚实基础的开发人员都非常有价值，但也有一些工具可以帮助抽象环境设置和依赖项的一些复杂性，从而使开发人员能够更轻松地进行修补！
+
+我们推荐的这些工具之一是脚手架-eth！
+
+Scaffold-eth 的核心是为以太坊上的快速原型设计提供现成的堆栈，使开发人员能够访问最先进的工具来快速学习/发布基于以太坊的 dApp。使用 Scaffold-eth 和 Alchemy，可以轻松地在区块链上合成和部署代码。如果不熟悉加密质押，最好将其概括为将加密资产锁定/存入 DeFi 协议或智能合约以赚取利息的过程。Staking 加密已成为许多 DeFi 协议的基石，并允许开发人员创建复杂的金融衍生产品。
+虽然大多数 DeFi 质押合约都非常复杂，但我们将研究最基本的合约之一，以便我们学习关键概念。
+
+我们将一起学习以下赌注的构建块：
+
+使用 Scaffold-Eth 构建
+一起破解前端
+打造 Solidity “后端”
+将 ETH 从钱包转移到智能合约，反之亦然
+使用 Solidity 修饰符
+1. 下载 Scaffold-Eth
+在浏览器输入： https://gitpod.io/#github.com/scaffold-eth/scaffold-eth-challenges/tree/challenge-1-decentralized-staking，当我们进入的时候会提示我们登录，我们这里可以选择使用Github登录，没有的同学去申请注册一个。
+
+
+
+选择我们需要使用的工具基于浏览器的VScode，等待我们项目初始化完成。
+
+
+
+当出现下面的页面则说明我们的项目初始化可以了。
+
+
+
+因为我们后续需要去提交Git的地址，所以这里需要去新建一个分支，毕竟抄作业交的作业肯定是我们自己的。帝哥这个写的就是Coinman。
+
+
+
+
+
+当我们点击publish branch的时候，页面右下角会提示我们如下所示，第一个问题，我们上面说了默认权限未开启，需要我们去开启，按照上面的开启即可，因为我们是clone人家的代码，作者是没有给你权限进行修改的，所以我们需要去fork作者的代码在自己的仓库，如下操作即可。
+
+
+
+当我们把代码fork到我们仓库之后下，下面就该修改我们的代码了，我们来到代码的地方进行修改。
+
+
+
+代码如下：
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.4;
+
+import "hardhat/console.sol";
+import "./ExampleExternalContract.sol";
+
+contract Staker {
+
+  ExampleExternalContract public exampleExternalContract;
+
+  mapping(address => uint256) public balances;
+  mapping(address => uint256) public depositTimestamps;
+
+  uint256 public constant rewardRatePerSecond = 0.1 ether;
+  uint256 public withdrawalDeadline = block.timestamp + 120 seconds;
+  uint256 public claimDeadline = block.timestamp + 240 seconds;
+  uint256 public currentBlock = 0;
+
+  // Events
+  event Stake(address indexed sender, uint256 amount);
+  event Received(address, uint);
+  event Execute(address indexed sender, uint256 amount);
+
+  // Modifiers
+  /*
+  Checks if the withdrawal period has been reached or not
+  */
+  modifier withdrawalDeadlineReached( bool requireReached ) {
+    uint256 timeRemaining = withdrawalTimeLeft();
+    if( requireReached ) {
+      require(timeRemaining == 0, "Withdrawal period is not reached yet");
+    } else {
+      require(timeRemaining > 0, "Withdrawal period has been reached");
+    }
+    _;
+  }
+
+  /*
+  Checks if the claim period has ended or not
+  */
+  modifier claimDeadlineReached( bool requireReached ) {
+    uint256 timeRemaining = claimPeriodLeft();
+    if( requireReached ) {
+      require(timeRemaining == 0, "Claim deadline is not reached yet");
+    } else {
+      require(timeRemaining > 0, "Claim deadline has been reached");
+    }
+    _;
+  }
+
+  /*
+  Requires that the contract only be completed once!
+  */
+  modifier notCompleted() {
+    bool completed = exampleExternalContract.completed();
+    require(!completed, "Stake already completed!");
+    _;
+  }
+
+  constructor(address exampleExternalContractAddress){
+      exampleExternalContract = ExampleExternalContract(exampleExternalContractAddress);
+  }
+
+  // Stake function for a user to stake ETH in our contract
+  function stake() public payable withdrawalDeadlineReached(false) claimDeadlineReached(false){
+    balances[msg.sender] = balances[msg.sender] + msg.value;
+    depositTimestamps[msg.sender] = block.timestamp;
+    emit Stake(msg.sender, msg.value);
+  }
+
+  /*
+  Withdraw function for a user to remove their staked ETH inclusive
+  of both principal and any accrued interest
+  */
+  function withdraw() public withdrawalDeadlineReached(true) claimDeadlineReached(false) notCompleted{
+    require(balances[msg.sender] > 0, "You have no balance to withdraw!");
+    uint256 individualBalance = balances[msg.sender];
+    uint256 indBalanceRewards = individualBalance + ((block.timestamp-depositTimestamps[msg.sender])*rewardRatePerSecond);
+    balances[msg.sender] = 0;
+
+    // Transfer all ETH via call! (not transfer) cc: https://solidity-by-example.org/sending-ether
+    (bool sent, bytes memory data) = msg.sender.call{value: indBalanceRewards}("");
+    require(sent, "RIP; withdrawal failed :( ");
+  }
+
+  /*
+  Allows any user to repatriate "unproductive" funds that are left in the staking contract
+  past the defined withdrawal period
+  */
+  function execute() public claimDeadlineReached(true) notCompleted {
+    uint256 contractBalance = address(this).balance;
+    exampleExternalContract.complete{value: address(this).balance}();
+  }
+
+  /*
+  READ-ONLY function to calculate the time remaining before the minimum staking period has passed
+  */
+  function withdrawalTimeLeft() public view returns (uint256 withdrawalTimeLeft) {
+    if( block.timestamp >= withdrawalDeadline) {
+      return (0);
+    } else {
+      return (withdrawalDeadline - block.timestamp);
+    }
+  }
+
+  /*
+  READ-ONLY function to calculate the time remaining before the minimum staking period has passed
+  */
+  function claimPeriodLeft() public view returns (uint256 claimPeriodLeft) {
+    if( block.timestamp >= claimDeadline) {
+      return (0);
+    } else {
+      return (claimDeadline - block.timestamp);
+    }
+  }
+
+  /*
+  Time to "kill-time" on our local testnet
+  */
+  function killTime() public {
+    currentBlock = block.timestamp;
+  }
+
+  /*
+  \Function for our smart contract to receive ETH
+  cc: https://docs.soliditylang.org/en/latest/contracts.html#receive-ether-function
+  */
+  receive() external payable {
+      emit Received(msg.sender, msg.value);
+  }
+}
+我们智能合约的后端已写好了，现在就一起来构建我们的前端吧。
+
+
+
 import WalletConnectProvider from "@walletconnect/web3-provider";
 //import Torus from "@toruslabs/torus-embed"
 import WalletLink from "walletlink";
-import { Alert, Button, Col, Menu, Row, List } from "antd";
+import { Alert, Button, Col, Menu, Row, List, Divider } from "antd";
 import "antd/dist/antd.css";
 import React, { useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Link, Route, Switch } from "react-router-dom";
@@ -38,7 +244,7 @@ const { ethers } = require("ethers");
 
     Support:
     https://t.me/joinchat/KByvmRe5wkR-8F_zz6AjpA
-    or DM @austingriffith on twitter or telegram
+    or DM @austingriffith on Twitter or Telegram
 
     You should get your own Infura.io ID and put it in `constants.js`
     (this is your connection to the main Ethereum network for ENS etc.)
@@ -252,9 +458,8 @@ function App(props) {
   );
   if (DEBUG) console.log("💵 stakerContractBalance", stakerContractBalance);
 
-  // ** keep track of total 'threshold' needed of ETH
-  const threshold = useContractReader(readContracts, "Staker", "threshold");
-  console.log("💵 threshold:", threshold);
+  const rewardRatePerSecond = useContractReader(readContracts, "Staker", "rewardRatePerSecond");
+  console.log("💵 Reward Rate:", rewardRatePerSecond);
 
   // ** keep track of a variable from the contract in the local React state:
   const balanceStaked = useContractReader(readContracts, "Staker", "balances", [address]);
@@ -264,9 +469,16 @@ function App(props) {
   const stakeEvents = useEventListener(readContracts, "Staker", "Stake", localProvider, 1);
   console.log("📟 stake events:", stakeEvents);
 
+  const receiveEvents = useEventListener(readContracts, "Staker", "Received", localProvider, 1);
+  console.log("📟 receive events:", receiveEvents);
+
   // ** keep track of a variable from the contract in the local React state:
-  const timeLeft = useContractReader(readContracts, "Staker", "timeLeft");
-  console.log("⏳ timeLeft:", timeLeft);
+  const claimPeriodLeft = useContractReader(readContracts, "Staker", "claimPeriodLeft");
+  console.log("⏳ Claim Period Left:", claimPeriodLeft);
+
+  const withdrawalTimeLeft = useContractReader(readContracts, "Staker", "withdrawalTimeLeft");
+  console.log("⏳ Withdrawal Time Left:", withdrawalTimeLeft);
+
 
   // ** Listen for when the contract has been 'completed'
   const complete = useContractReader(readContracts, "ExampleExternalContract", "completed");
@@ -281,9 +493,9 @@ function App(props) {
   let completeDisplay = "";
   if (complete) {
     completeDisplay = (
-      <div style={{ padding: 64, backgroundColor: "#eeffef", fontWeight: "bolder", color: "rgba(0, 0, 0, 0.85)" }}>
-        🚀 🎖 👩‍🚀 -- Staking App triggered `ExampleExternalContract` -- 🎉 🍾 🎊
-        <Balance balance={exampleExternalContractBalance} fontSize={64} /> ETH staked!
+      <div style={{padding: 64, backgroundColor: "#eeffef", fontWeight: "bold", color: "rgba(0, 0, 0, 0.85)" }} >
+        -- 💀 Staking App Fund Repatriation Executed 🪦 --
+        <Balance balance={exampleExternalContractBalance} fontSize={32} /> ETH locked!
       </div>
     );
   }
@@ -511,23 +723,41 @@ function App(props) {
           <Route exact path="/">
             {completeDisplay}
 
-            <div style={{ padding: 8, marginTop: 32 }}>
+            <div style={{ padding: 8, marginTop: 16 }}>
               <div>Staker Contract:</div>
               <Address value={readContracts && readContracts.Staker && readContracts.Staker.address} />
             </div>
 
-            <div style={{ padding: 8, marginTop: 32 }}>
-              <div>Timeleft:</div>
-              {timeLeft && humanizeDuration(timeLeft.toNumber() * 1000)}
+            <Divider />
+
+            <div style={{ padding: 8, marginTop: 16 }}>
+              <div>Reward Rate Per Second:</div>
+              <Balance balance={rewardRatePerSecond} fontSize={64} /> ETH
             </div>
 
-            <div style={{ padding: 8 }}>
-              <div>Total staked:</div>
-              <Balance balance={stakerContractBalance} fontSize={64} />/<Balance balance={threshold} fontSize={64} />
+            <Divider />
+
+            <div style={{ padding: 8, marginTop: 16, fontWeight: "bold" }}>
+              <div>Claim Period Left:</div>
+              {claimPeriodLeft && humanizeDuration(claimPeriodLeft.toNumber() * 1000)}
             </div>
 
-            <div style={{ padding: 8 }}>
-              <div>You staked:</div>
+            <div style={{ padding: 8, marginTop: 16, fontWeight: "bold"}}>
+              <div>Withdrawal Period Left:</div>
+              {withdrawalTimeLeft && humanizeDuration(withdrawalTimeLeft.toNumber() * 1000)}
+            </div>
+
+            <Divider />
+
+            <div style={{ padding: 8, fontWeight: "bold"}}>
+              <div>Total Available ETH in Contract:</div>
+              <Balance balance={stakerContractBalance} fontSize={64} />
+            </div>
+
+            <Divider />
+
+            <div style={{ padding: 8,fontWeight: "bold" }}>
+              <div>ETH Locked 🔒 in Staker Contract:</div>
               <Balance balance={balanceStaked} fontSize={64} />
             </div>
 
@@ -569,21 +799,6 @@ function App(props) {
                 this <Contract/> component will automatically parse your ABI
                 and give you a form to interact with it locally
             */}
-
-            <div style={{ width: 500, margin: "auto", marginTop: 64 }}>
-              <div>Stake Events:</div>
-              <List
-                dataSource={stakeEvents}
-                renderItem={item => {
-                  return (
-                    <List.Item key={item.blockNumber}>
-                      <Address value={item.args[0]} ensProvider={mainnetProvider} fontSize={16} /> =>
-                      <Balance balance={item.args[1]} />
-                    </List.Item>
-                  );
-                }}
-              />
-            </div>
 
             {/* uncomment for a second contract:
             <Contract
